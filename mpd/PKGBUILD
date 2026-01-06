@@ -42,7 +42,7 @@ makedepends=(alsa-lib audiofile avahi boost curl dbus faad2
 provides=(mpd)
 conflicts=(mpd)
 backup=("etc/mpd.conf")
-source=("mpd::git+https://github.com/MusicPlayerDaemon/MPD"
+source=("mpd::git+https://github.com/slqy123/MPD"
         "mpd.conf"
         "mpd.sysusers"
         "mpd.tmpfiles")
