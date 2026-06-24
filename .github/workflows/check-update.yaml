@@ -77,12 +77,13 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # 检查是否有文件（PKGBUILD 或 .SRCINFO）被修改
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Changes detected! Committing updates..."
-            git add .
+          # 仅暂存 PKGBUILD 和 .SRCINFO，忽略 makepkg 生成的临时文件
+          find . -mindepth 2 -maxdepth 2 \( -name PKGBUILD -o -name .SRCINFO \) -print0 | xargs -0 -r git add
+
+          if ! git diff --cached --quiet; then
+            echo "PKGBUILD/.SRCINFO changes detected! Committing updates..."
             git commit -m "chore(auto): update PKGBUILD pkgver and .SRCINFO"
             git push origin HEAD:${{ github.ref }}
           else
-            echo "No package updates found. Skipping commit."
+            echo "No PKGBUILD/.SRCINFO updates found. Skipping commit."
           fi
