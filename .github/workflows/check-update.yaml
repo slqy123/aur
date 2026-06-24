@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
     # 允许您在 GitHub 页面上点击按钮手动触发
 
+permissions:
+  contents: write
+
 jobs:
   update-packages:
     runs-on: ubuntu-latest
