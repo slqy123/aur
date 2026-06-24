@@ -1,0 +1,85 @@
+name: Update Arch Linux VCS Packages
+
+on:
+  schedule:
+    - cron: '0 1 * * 0'
+  workflow_dispatch:
+    # 允许您在 GitHub 页面上点击按钮手动触发
+
+jobs:
+  update-packages:
+    runs-on: ubuntu-latest
+    # 使用包含 Arch Linux 环境的官方/社区 Docker 容器，确保能运行 makepkg
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          # 升级系统并安装 base-devel, git 以及 makepkg 所需的最小依赖
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm base-devel git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 取消浅克隆（fetch-depth: 0），确保 git 历史完整以支持后续提交
+          fetch-depth: 0
+
+      - name: Configure Git Safe Directory
+        run: |
+          # 在 Docker 容器中运行 git 需要将当前工作目录标记为安全
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Traverse and Update PKGBUILDs
+        run: |
+          # 允许 makepkg 以后台/root 身份运行（非安全环境下的特例方案，或创建临时用户）
+          # 官方 makepkg 禁止 root 运行，这里创建一个拥有无密码 sudo 权限的 build 用户
+          useradd -m build
+          echo "build ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R build:build "$GITHUB_WORKSPACE"
+
+          # 开始遍历当前仓库下的所有包含 PKGBUILD 的子文件夹
+          # 排除 .git 等隐藏目录
+          find . -maxdepth 2 -name PKGBUILD | while read -r pkgbuild_path; do
+            pkg_dir=$(dirname "$pkgbuild_path")
+            
+            # 跳过根目录本身（如果根目录没有 PKGBUILD）
+            if [ "$pkg_dir" = "." ]; then continue; fi
+            
+            echo "========================================="
+            echo "Checking package in: $pkg_dir"
+            echo "========================================="
+            
+            # 切换到子文件夹，并以 build 用户身份执行更新
+            cd "$GITHUB_WORKSPACE/$pkg_dir"
+            
+            # 1. 让 makepkg 跑一次源拉取和 pkgver()，动态更新 PKGBUILD 文件中的版本号
+            # --nodeps: 忽略依赖检查（因为我们不需要真正编译它）
+            # --nobuild: 只下载源码并更新 pkgver，不执行 build() 和 package()
+            su build -c "makepkg --nodeps --nobuild"
+            
+            # 2. 重新生成 .SRCINFO 文件（AUR 仓库以及很多自定义仓库需要这个文件）
+            su build -c "makepkg --printsrcinfo" > .SRCINFO
+          done
+          
+          # 恢复整个仓库的所有权给 root，以便下一步的 GitHub Actions 插件能正常读取
+          chown -R root:root "$GITHUB_WORKSPACE"
+
+      - name: Commit and Push Changes
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          
+          # 配置 Git 提交者信息
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # 检查是否有文件（PKGBUILD 或 .SRCINFO）被修改
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Changes detected! Committing updates..."
+            git add .
+            git commit -m "chore(auto): update PKGBUILD pkgver and .SRCINFO"
+            git push origin HEAD:${{ github.ref }}
+          else
+            echo "No package updates found. Skipping commit."
+          fi
