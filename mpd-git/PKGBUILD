@@ -68,7 +68,6 @@ prepare() {
 
 build() {
   cd "mpd"
-  export CXXFLAGS="$CXXFLAGS -include fmt/format.h"
 
   # NOTE: sndio conflicts with alsa
   # TODO: package adplug
